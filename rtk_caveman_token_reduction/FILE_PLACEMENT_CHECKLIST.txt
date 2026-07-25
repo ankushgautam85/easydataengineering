@@ -1,0 +1,210 @@
+File Placement and Execution Checklist
+
+1. Global/user hook layer — every developer profile
+
+Use the existing telemetry hook JSON file under the developer profile:
+
+    Windows: %USERPROFILE%\.copilot\hooks\<existing-telemetry-file>.json
+    macOS:   ~/.copilot/hooks/<existing-telemetry-file>.json
+    Linux:   ~/.copilot/hooks/<existing-telemetry-file>.json
+
+Do not copy a hook JSON file into an application repository.
+
+Direct integration
+
+Use when the current telemetry PreToolUse hook only observes and does not rewrite tool_input:
+
+    global-hooks/merge_rtk_into_existing_hooks.py
+
+This script modifies the existing global/user hook file in place, after creating a timestamped backup. It preserves all current telemetry events and appends one RTK PreToolUse command.
+
+Dispatcher integration
+
+Use only when telemetry or another policy hook also returns updatedInput, permissionDecision, or additionalContext:
+
+    global-hooks/combined_pretool_dispatcher.py
+    global-hooks/pretool-chain.template.json
+
+Place managed copies outside repositories, for example:
+
+    Windows: C:\ProgramData\Company\CopilotHooks\
+    macOS:   /Library/Application Support/Company/CopilotHooks/
+    Linux:   /opt/company/copilot-hooks/
+
+Restrict write access to administrators or the engineering-AI governance group.
+
+Global verification utilities
+
+Keep these in the central kit or an approved managed tools directory:
+
+    global-hooks/verify_global_hooks.py
+    global-hooks/test_rtk_copilot_hook.py
+    global-hooks/remove_rtk_from_existing_hooks.py
+
+VS Code policy/settings fragment
+
+Merge, do not overwrite, this file through enterprise settings management:
+
+    global-hooks/vscode-settings.fragment.jsonc
+
+It disables repository and agent-scoped hooks while keeping the global user hook location enabled.
+
+------------------------------------------------------------------------
+
+2. Application repositories — all 14 repositories
+
+Copy or merge the contents of:
+
+    repository-template/.github/
+
+into:
+
+    <application-repository>/.github/
+
+The resulting repository layout is:
+
+    .github/
+    ├── copilot-instructions.md
+    ├── TOKEN-EFFICIENCY-VERSION
+    ├── agents/
+    │   ├── company-efficient-developer.agent.md
+    │   ├── company-efficient-debugger.agent.md
+    │   └── company-efficient-reviewer.agent.md
+    ├── skills/
+    │   ├── company-compact-response/SKILL.md
+    │   ├── company-minimal-change/SKILL.md
+    │   ├── company-root-cause-debugging/SKILL.md
+    │   └── company-rtk-terminal/SKILL.md
+    ├── prompts/
+    │   ├── company-implement-minimal-change.prompt.md
+    │   ├── company-debug-root-cause.prompt.md
+    │   └── company-review-minimal-diff.prompt.md
+    ├── instructions/
+    │   ├── company-security.instructions.md
+    │   └── company-testing.instructions.md
+    └── scripts/
+        └── validate-copilot-token-efficiency.py
+
+There must be no:
+
+    .github/hooks/
+
+Existing copilot-instructions.md
+
+Do not replace the repository's existing instructions. The rollout script inserts or updates only the marked company block:
+
+    <!-- BEGIN COMPANY COPILOT TOKEN EFFICIENCY -->
+    ...
+    <!-- END COMPANY COPILOT TOKEN EFFICIENCY -->
+
+CODEOWNERS
+
+Copy the ownership rules from:
+
+    repository-template/.github/CODEOWNERS.fragment
+
+into the repository's existing .github/CODEOWNERS or root CODEOWNERS file. Replace example owner names with actual teams.
+
+Optional CI policy
+
+Copy only after review:
+
+    repository-template/optional/copilot-token-efficiency-policy.yml
+
+into:
+
+    .github/workflows/copilot-token-efficiency-policy.yml
+
+This workflow validates package structure and rejects repository hook files.
+
+------------------------------------------------------------------------
+
+3. Multi-repository rollout workstation
+
+Keep these files on the controlled rollout workstation, not in each application repository:
+
+    rollout/deploy_to_repositories.py
+    rollout/remove_from_repositories.py
+    rollout/validate_all_repositories.py
+    rollout/repositories.csv
+
+Create repositories.csv from:
+
+    rollout/repositories.csv.example
+
+Run in this order:
+
+    python3 rollout/deploy_to_repositories.py \
+      --repositories rollout/repositories.csv \
+      --template repository-template/.github \
+      --workdir ./rollout-work \
+      --dry-run
+
+Review every result, then run without --dry-run. Add --push --create-pr only when GitHub CLI authentication and repository approvals are ready.
+
+------------------------------------------------------------------------
+
+4. Developer/endpoint scripts
+
+These scripts configure an already-installed RTK binary and existing hook file. They do not install RTK.
+
+Windows laptop
+
+Run:
+
+    developer-install/windows/Configure-CopilotEfficiency.ps1
+
+Windows VDI
+
+Place the login wrapper in the approved profile or endpoint-management location:
+
+    developer-install/windows/Invoke-CopilotEfficiencyVdiLogin.ps1
+
+The wrapper invokes the Windows configuration script idempotently.
+
+macOS laptop
+
+Run:
+
+    developer-install/macos/configure-copilot-efficiency.sh
+
+Linux VDI
+
+Run once for persistent profiles:
+
+    developer-install/linux/configure-copilot-efficiency.sh
+
+Run at login for nonpersistent profiles:
+
+    developer-install/linux/invoke-vdi-login.sh
+
+------------------------------------------------------------------------
+
+5. Metrics collection location
+
+Run metrics scripts from a controlled analytics workstation or approved internal job runner:
+
+    metrics/export_rtk_gain.py
+    metrics/extract_copilot_otel.py
+    metrics/calculate_efficiency.py
+    metrics/generate_dashboard.py
+    metrics/task_measurements_template.csv
+
+Store generated aggregate CSV/HTML outputs in the approved reporting location. Do not store prompts, source code, terminal text, tool arguments, or tool results.
+
+------------------------------------------------------------------------
+
+6. Required execution sequence
+
+1.  Back up and identify the existing global telemetry hook JSON.
+2.  Determine whether telemetry observes only or also mutates tool input.
+3.  Use direct merge for observation-only telemetry; use the dispatcher for multiple input-mutating hooks.
+4.  Apply the managed VS Code hook-location settings.
+5.  Verify telemetry and RTK both execute.
+6.  Pilot repository assets in two repositories.
+7.  Run the 14-repository dry run.
+8.  Create and merge the repository pull requests.
+9.  Run endpoint scripts by machine type.
+10. Restart VS Code and validate Agent Debug Logs.
+11. Start RTK and Copilot OTel aggregate measurement.
+12. Keep rollback backups until the rollout has passed the agreed observation period.

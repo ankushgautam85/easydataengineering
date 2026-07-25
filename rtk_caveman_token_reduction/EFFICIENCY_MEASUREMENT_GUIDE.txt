@@ -1,0 +1,216 @@
+Efficiency Measurement Solution
+
+1. Principles
+
+Measure four separate outcomes:
+
+1.  RTK terminal-output reduction.
+2.  Copilot input and output token usage.
+3.  Code and diff reduction.
+4.  Developer cycle time.
+
+Quality is a release gate, not a savings percentage.
+
+Do not add RTK, Caveman, and Ponytail percentages together.
+
+2. Data sources
+
+RTK
+
+Export local aggregate metrics:
+
+    rtk gain --all --format json
+
+Use:
+
+    python3 metrics/export_rtk_gain.py \
+      --output metrics-output/rtk-$(date +%Y-%m-%d).json
+
+Copilot OpenTelemetry
+
+Copilot can emit session-level:
+
+-   Input tokens.
+-   Output tokens.
+-   Cache-read tokens.
+-   Cache-creation tokens.
+-   Turn count.
+-   Model.
+-   Tool executions.
+-   Durations.
+
+Keep content capture disabled.
+
+Extract an approved JSONL export:
+
+    python3 metrics/extract_copilot_otel.py \
+      --input /approved/path/copilot-otel.jsonl \
+      --output metrics-output/copilot-sessions.csv
+
+Task measurements
+
+Copy:
+
+    metrics/task_measurements_template.csv
+
+Record one baseline and one optimized row per benchmark task.
+
+3. Required metrics
+
+RTK shell-output reduction
+
+    Reduction % =
+    (raw_terminal_bytes - filtered_terminal_bytes)
+    ÷ raw_terminal_bytes × 100
+
+When using RTK’s own estimates, label the result RTK estimated command-output reduction.
+
+Session token reduction
+
+    Session reduction % =
+    1 - optimized_total_tokens ÷ baseline_total_tokens
+
+where:
+
+    total_tokens =
+    input_tokens
+    + output_tokens
+    + cache_creation_input_tokens
+
+Report cache-read tokens separately because billing treatment can differ by plan and model.
+
+Caveman response reduction
+
+    Output reduction % =
+    1 - optimized_output_tokens ÷ baseline_output_tokens
+
+This does not imply fewer premium requests.
+
+Ponytail code reduction
+
+    Added LOC reduction % =
+    1 - optimized_added_loc ÷ baseline_added_loc
+
+Also track:
+
+-   Files changed.
+-   New files.
+-   Dependencies added.
+-   Review revisions.
+
+Cycle-time reduction
+
+    Cycle-time reduction % =
+    1 - optimized_median_minutes ÷ baseline_median_minutes
+
+Use medians.
+
+4. Quality gates
+
+The optimized arm fails when any of these materially worsens:
+
+-   Focused test failures.
+-   Full-suite failures.
+-   Security findings.
+-   Rollback rate.
+-   Escaped defects.
+-   Review revisions.
+-   Acceptance rate.
+
+Fewer lines are not a benefit when correctness declines.
+
+5. Benchmark design
+
+Use four arms:
+
+  Arm   Configuration
+  ----- -----------------------------------------------------
+  A     Existing configuration
+  B     RTK only
+  C     RTK plus compact-response rules
+  D     RTK plus compact response plus minimum-change rules
+
+Control:
+
+-   Same repository commit.
+-   Same model.
+-   Same prompt.
+-   Fresh session.
+-   Same acceptance tests.
+-   Same maximum time.
+-   Randomized execution order.
+-   No reuse of another arm’s code.
+
+Recommended initial task set:
+
+-   Four bug fixes.
+-   Four failing unit tests.
+-   Three build failures.
+-   Three API changes.
+-   Three data transformations.
+-   Three refactoring requests.
+-   Three security-sensitive fixes.
+-   Three reviews.
+
+6. Calculation workflow
+
+1.  Collect baseline task rows.
+2.  Collect optimized task rows.
+3.  Export RTK aggregate metrics.
+4.  Export or collect Copilot OTel metadata.
+5.  Run:
+
+    python3 metrics/calculate_efficiency.py \
+      --input metrics/task_measurements.csv \
+      --output metrics-output/efficiency-summary.json
+
+6.  Generate a local HTML report:
+
+    python3 metrics/generate_dashboard.py \
+      --input metrics-output/efficiency-summary.json \
+      --output metrics-output/efficiency-dashboard.html
+
+7. Recommended initial thresholds
+
+  Metric                                                      Target
+  ------------------------------------------------- ----------------
+  Eligible RTK command adoption                        90% or higher
+  Median RTK shell-output reduction                    40% or higher
+  Median output-token reduction on long responses      25% or higher
+  Added LOC reduction on comparable tasks              10% or higher
+  Files-changed reduction                              10% or higher
+  Median cycle-time reduction                          10% or higher
+  Copilot turns per task                                 No increase
+  Test pass rate                                      No degradation
+  Security findings                                      No increase
+  Rollbacks                                              No increase
+
+8. Privacy
+
+Do not collect:
+
+-   Prompt contents.
+-   Response contents.
+-   Source code.
+-   Terminal command arguments.
+-   Tool responses.
+-   Secrets.
+-   Customer data.
+-   Developer identity when a pseudonym is sufficient.
+
+The supplied parsers extract metadata only.
+
+9. Leadership report
+
+Report separately:
+
+    RTK command-output reduction
+    Copilot session input-token reduction
+    Copilot session output-token reduction
+    Added LOC reduction
+    Files changed reduction
+    Cycle-time reduction
+    Premium requests per accepted task
+    Quality gates
+
+Do not publish one combined percentage unless it is calculated from matched baseline and optimized total session tokens.

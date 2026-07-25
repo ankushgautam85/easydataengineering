@@ -1,0 +1,315 @@
+Developer Installation and Verification Guide
+
+RTK and Copilot are already installed. These steps configure and verify the combined global telemetry plus RTK hook chain and repository customizations.
+
+Common prerequisites
+
+Every developer needs:
+
+-   Approved RTK binary.
+-   Python 3.9 or later for the supplied management utilities.
+-   Copilot Chat and Agent mode.
+-   Access to the central implementation kit.
+-   Access to at least one updated repository.
+-   Existing user/global telemetry hook file.
+
+Common post-configuration checks
+
+Run:
+
+    rtk --version
+    rtk gain
+    rtk telemetry status
+
+Then:
+
+1.  Restart VS Code.
+2.  Open an updated repository.
+3.  Run Chat: Open Customizations.
+4.  Confirm the three company agents.
+5.  Confirm the four company skills.
+6.  Confirm the three company prompts.
+7.  Run Developer: Show Agent Debug Logs.
+8.  Ask Copilot to run git status.
+9.  Confirm telemetry and RTK both executed.
+10. Run rtk gain --history.
+
+------------------------------------------------------------------------
+
+1. Windows Physical Laptop
+
+Expected locations
+
+    RTK:           approved enterprise path or PATH
+    Global hooks:  %USERPROFILE%\.copilot\hooks
+    VS Code user:  %APPDATA%\Code\User\settings.json
+
+Configure
+
+From PowerShell:
+
+    Set-ExecutionPolicy -Scope Process Bypass
+
+    .\developer-install\windows\Configure-CopilotEfficiency.ps1 `
+      -ExistingHookFile "$HOME\.copilot\hooks\company-telemetry.json" `
+      -KitRoot (Resolve-Path ".")
+
+Optional explicit RTK path:
+
+    .\developer-install\windows\Configure-CopilotEfficiency.ps1 `
+      -ExistingHookFile "$HOME\.copilot\hooks\company-telemetry.json" `
+      -RtkPath "C:\Program Files\Company\RTK\rtk.exe" `
+      -KitRoot (Resolve-Path ".")
+
+Verify
+
+    Get-Command rtk
+    rtk --version
+    rtk gain
+    py -3 .\global-hooks\verify_global_hooks.py `
+      --hooks-dir "$HOME\.copilot\hooks" `
+      --rtk-binary (Get-Command rtk).Source `
+      --telemetry-pattern telemetry
+
+Windows-specific checks
+
+-   The RTK path is quoted when it contains spaces.
+-   The hook output is UTF-8 JSON.
+-   The integrated terminal sees RTK.
+-   VS Code was restarted after hook changes.
+-   RTK_TELEMETRY_DISABLED=1 does not disable the company’s Copilot telemetry; it disables only RTK’s own optional upstream telemetry.
+
+------------------------------------------------------------------------
+
+2. macOS Physical Laptop
+
+Expected locations
+
+    RTK:           /opt/company/bin/rtk, /usr/local/bin/rtk, or approved path
+    Global hooks:  ~/.copilot/hooks
+    VS Code user:  ~/Library/Application Support/Code/User/settings.json
+
+Configure
+
+    chmod +x developer-install/macos/configure-copilot-efficiency.sh
+
+    developer-install/macos/configure-copilot-efficiency.sh \
+      "$HOME/.copilot/hooks/company-telemetry.json" \
+      "/approved/path/rtk"
+
+Verify
+
+    which rtk
+    rtk --version
+    rtk gain
+
+    python3 global-hooks/verify_global_hooks.py \
+      --hooks-dir "$HOME/.copilot/hooks" \
+      --rtk-binary "/approved/path/rtk" \
+      --telemetry-pattern telemetry
+
+macOS-specific checks
+
+-   Use the correct ARM64 or x86-64 RTK binary.
+-   Use an absolute RTK path because VS Code hook processes might not inherit Homebrew or shell-profile PATH entries.
+-   Confirm the integrated terminal, not only Terminal.app, can run RTK.
+
+------------------------------------------------------------------------
+
+3. Linux VDI
+
+Expected locations
+
+    RTK:           /opt/company/bin/rtk or approved image path
+    Global hooks:  ~/.copilot/hooks
+    VS Code user:  ~/.config/Code/User/settings.json
+
+Persistent VDI profile
+
+Run once:
+
+    chmod +x developer-install/linux/configure-copilot-efficiency.sh
+
+    developer-install/linux/configure-copilot-efficiency.sh \
+      "$HOME/.copilot/hooks/company-telemetry.json" \
+      "/opt/company/bin/rtk"
+
+Nonpersistent VDI
+
+Configure the login system to invoke:
+
+    developer-install/linux/invoke-vdi-login.sh
+
+Required environment variables:
+
+    export COPILOT_EFFICIENCY_KIT=/opt/company/copilot-token-efficiency-kit
+    export COPILOT_TELEMETRY_HOOK_FILE="$HOME/.copilot/hooks/company-telemetry.json"
+    export RTK_BINARY=/opt/company/bin/rtk
+
+The login script is idempotent. It verifies before changing the hook file and does not add duplicate RTK entries.
+
+Verify after image refresh
+
+    python3 "$COPILOT_EFFICIENCY_KIT/global-hooks/verify_global_hooks.py" \
+      --hooks-dir "$HOME/.copilot/hooks" \
+      --rtk-binary "$RTK_BINARY" \
+      --telemetry-pattern telemetry
+
+------------------------------------------------------------------------
+
+4. Windows VDI
+
+Expected locations
+
+    RTK:           base-image approved path
+    Global hooks:  user-profile container under %USERPROFILE%\.copilot\hooks
+    VS Code user:  user-profile container
+
+Persistent profile
+
+Run:
+
+    .\developer-install\windows\Configure-CopilotEfficiency.ps1 `
+      -ExistingHookFile "$HOME\.copilot\hooks\company-telemetry.json" `
+      -RtkPath "C:\Program Files\Company\RTK\rtk.exe" `
+      -KitRoot "C:\Program Files\Company\CopilotEfficiencyKit"
+
+Nonpersistent pooled VDI
+
+Configure login to invoke:
+
+    .\developer-install\windows\Invoke-CopilotEfficiencyVdiLogin.ps1
+
+Required environment variables:
+
+    COPILOT_EFFICIENCY_KIT
+    COPILOT_TELEMETRY_HOOK_FILE
+    RTK_BINARY
+
+The login script:
+
+1.  Confirms RTK exists.
+2.  Confirms the telemetry hook file exists.
+3.  Adds RTK only when absent.
+4.  Verifies JSON.
+5.  Runs the RTK rewrite smoke test.
+6.  Writes a non-sensitive status record.
+7.  Never records source code, prompts, or command output.
+
+VDI persistence checks
+
+-   Hook file survives logoff, or login initialization restores it.
+-   VS Code profile is mounted before the script runs.
+-   RTK history database is in a writable approved location.
+-   The hook works after the golden-image version changes.
+
+------------------------------------------------------------------------
+
+5. Remote Development and Extension Hosts
+
+Install and configure RTK where Copilot’s terminal tool executes.
+
+  Scenario                                         Required location
+  ------------------------------------------------ --------------------------
+  VS Code directly on Windows                      Windows laptop
+  VS Code directly on macOS                        Mac
+  VS Code desktop inside Windows VDI               Windows VDI
+  VS Code desktop inside Linux VDI                 Linux VDI
+  Local VS Code with remote Linux extension host   Remote Linux host
+  Dev container terminal execution                 Container or remote host
+
+A local laptop installation does not intercept commands executed on a remote extension host.
+
+------------------------------------------------------------------------
+
+6. Repository Activation
+
+After the global hook is verified:
+
+    git pull
+
+Confirm the repository contains:
+
+    .github/copilot-instructions.md
+    .github/TOKEN-EFFICIENCY-VERSION
+    .github/agents/
+    .github/skills/
+    .github/prompts/
+    .github/instructions/
+    .github/scripts/
+
+Confirm it does not contain:
+
+    .github/hooks/
+
+Run:
+
+    python3 .github/scripts/validate-copilot-token-efficiency.py .
+
+Windows:
+
+    py -3 .github\scripts\validate-copilot-token-efficiency.py .
+
+------------------------------------------------------------------------
+
+7. Daily Usage
+
+Development
+
+Select Company Efficient Developer.
+
+Debugging
+
+Select Company Efficient Debugger.
+
+Review
+
+Select Company Efficient Reviewer.
+
+Slash prompts
+
+    /company-implement-minimal-change
+    /company-debug-root-cause
+    /company-review-minimal-diff
+
+When full detail is needed
+
+Say:
+
+    Use normal-detail diagnostic mode. Preserve full relevant errors,
+    security implications, assumptions, and rollback information.
+
+------------------------------------------------------------------------
+
+8. Developer Troubleshooting
+
+Telemetry works but RTK does not
+
+-   Run the RTK smoke test.
+-   Confirm RTK is last among direct PreToolUse hooks.
+-   Confirm the hook command uses an absolute path.
+-   Inspect Agent Debug Logs.
+-   Run rtk gain --history.
+
+RTK works but telemetry is missing
+
+-   Confirm the merge targeted the correct existing hook file.
+-   Confirm the telemetry command remained in the JSON.
+-   Confirm workspace hooks are disabled.
+-   Confirm telemetry did not fail before writing its event.
+-   Run the global hook verifier with the correct telemetry pattern.
+
+Repeated permission prompt
+
+Inspect the RTK hook output and current permission policy. Do not change enterprise approval policy solely to eliminate prompts without security review.
+
+Compressed output is insufficient
+
+Request normal-detail diagnostic mode and inspect RTK’s retained failure output or execute a documented raw diagnostic command.
+
+Custom agent or skill not visible
+
+-   Open Chat Customizations diagnostics.
+-   Confirm the skill directory name matches its name.
+-   Confirm YAML frontmatter is valid.
+-   Restart VS Code.

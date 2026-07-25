@@ -1,0 +1,11 @@
+Changelog
+
+1.0.0 — 2026-07-23
+
+-   Added global/user hook integration that preserves existing Copilot telemetry hooks.
+-   Added RTK PreToolUse integration without repository-level hooks.
+-   Added Caveman Lite and Ponytail-inspired repository instructions, agents, skills, and prompts.
+-   Added Windows, macOS, Linux VDI, and Windows VDI developer configuration scripts.
+-   Added rollout automation for 14 repositories.
+-   Added RTK and Copilot OpenTelemetry efficiency-measurement utilities.
+-   Added validation, rollback, and unit tests.

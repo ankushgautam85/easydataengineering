@@ -1,0 +1,16 @@
+Primary Sources
+
+The implementation was designed against the following primary documentation current on July 23, 2026:
+
+-   VS Code Agent Hooks: https://code.visualstudio.com/docs/agent-customization/hooks
+-   VS Code Hooks Reference: https://code.visualstudio.com/docs/agents/reference/hooks-reference
+-   VS Code Custom Instructions: https://code.visualstudio.com/docs/agent-customization/custom-instructions
+-   VS Code Custom Agents: https://code.visualstudio.com/docs/agent-customization/custom-agents
+-   VS Code Agent Skills: https://code.visualstudio.com/docs/agent-customization/agent-skills
+-   VS Code Prompt Files: https://code.visualstudio.com/docs/agent-customization/prompt-files
+-   VS Code Copilot OpenTelemetry: https://code.visualstudio.com/docs/agents/guides/monitoring-agents
+-   GitHub Copilot Hooks Reference: https://docs.github.com/en/copilot/reference/hooks-reference
+-   RTK repository: https://github.com/rtk-ai/rtk
+-   RTK hook design: https://github.com/rtk-ai/rtk/tree/develop/hooks
+
+Review these sources before upgrading VS Code or RTK because hook behavior is a preview capability and may change.

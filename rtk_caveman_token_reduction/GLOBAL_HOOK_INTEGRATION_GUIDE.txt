@@ -1,0 +1,208 @@
+Global Hook Integration Guide
+
+Purpose
+
+Add RTK to the existing Copilot user/global hook configuration without replacing the team’s telemetry tracking solution.
+
+Key rule
+
+Do not create .github/hooks in application repositories.
+
+Workspace hooks can take precedence over user hooks for the same event. This implementation therefore keeps the full chain at user/global scope and optionally disables workspace and agent-scoped hook discovery.
+
+Required locations
+
+User hooks:
+
+    Windows: %USERPROFILE%\.copilot\hooks
+    macOS:   ~/.copilot/hooks
+    Linux:   ~/.copilot/hooks
+
+Repository customizations remain under .github, but without a hooks subdirectory.
+
+Recommended hook order
+
+    SessionStart:
+      telemetry
+
+    UserPromptSubmit:
+      telemetry, when approved
+
+    PreToolUse:
+      telemetry observation
+      security/policy decision, if applicable
+      RTK command rewrite
+
+    PostToolUse:
+      telemetry
+
+    Stop:
+      telemetry and aggregation
+
+RTK should be the final hook that changes the terminal command.
+
+Installer interaction
+
+This kit does not rerun rtk init -g --copilot. It invokes the approved binary's rtk hook copilot entry point directly from the existing user hook file. This avoids replacing, relocating, or duplicating the current telemetry configuration.
+
+After an RTK upgrade, rerun the smoke test before changing the hook file.
+
+Option A — Direct ordered hooks
+
+Use this option when the telemetry PreToolUse hook:
+
+-   Does not return updatedInput.
+-   Does not rewrite commands.
+-   Does not emit malformed JSON.
+-   Exits zero.
+-   Is designed to observe rather than control execution.
+
+Run:
+
+    python3 global-hooks/merge_rtk_into_existing_hooks.py \
+      --target "$HOME/.copilot/hooks/company-telemetry.json" \
+      --command "/approved/path/rtk hook copilot"
+
+The utility:
+
+-   Creates a backup.
+-   Preserves every existing event.
+-   Preserves every existing telemetry command.
+-   Adds exactly one RTK command.
+-   Appends RTK after direct existing PreToolUse entries.
+-   Supports simple VS Code format and matcher-based nested format.
+-   Does not touch repository files.
+
+Platform-specific command overrides
+
+A cross-platform hook file can specify all commands:
+
+    python3 global-hooks/merge_rtk_into_existing_hooks.py \
+      --target "$HOME/.copilot/hooks/company-telemetry.json" \
+      --command "rtk hook copilot" \
+      --windows-command '"C:\Program Files\Company\RTK\rtk.exe" hook copilot' \
+      --linux-command "/opt/company/bin/rtk hook copilot" \
+      --osx-command "/opt/company/bin/rtk hook copilot"
+
+Use absolute paths when possible because hook processes can have a restricted PATH.
+
+Option B — Combined dispatcher
+
+Use this option when telemetry or security hooks also return updatedInput, permissionDecision, or additional context that must be merged in a known sequence.
+
+Files:
+
+    global-hooks/combined_pretool_dispatcher.py
+    global-hooks/pretool-chain.template.json
+
+1.  Copy pretool-chain.template.json to a protected location.
+2.  Replace command arrays with approved absolute paths.
+3.  Test every step independently.
+4.  Replace the multiple direct PreToolUse entries with one dispatcher entry.
+5.  Keep non-PreToolUse telemetry events unchanged.
+
+Example hook entry:
+
+    {
+      "type": "command",
+      "command": "python3 /opt/company/copilot-hooks/combined_pretool_dispatcher.py --config /opt/company/copilot-hooks/pretool-chain.json",
+      "timeout": 10
+    }
+
+The dispatcher applies:
+
+    deny > ask > allow
+
+It passes each updatedInput to the next step and emits one final response.
+
+VS Code settings protection
+
+Apply the following through managed settings when possible:
+
+    {
+      "chat.hookFilesLocations": {
+        ".github/hooks": false,
+        ".claude/settings.local.json": false,
+        ".claude/settings.json": false,
+        "~/.copilot/hooks": true
+      },
+      "chat.useCustomAgentHooks": false,
+      "github.copilot.chat.otel.captureContent": false
+    }
+
+The supplied fragment is:
+
+    global-hooks/vscode-settings.fragment.jsonc
+
+Do not blindly overwrite a developer’s full settings file. Merge the fragment through your normal VS Code policy or configuration-management mechanism.
+
+Verification
+
+Run:
+
+    python3 global-hooks/verify_global_hooks.py \
+      --hooks-dir "$HOME/.copilot/hooks" \
+      --rtk-binary "/approved/path/rtk" \
+      --telemetry-pattern "telemetry" \
+      --repo "/path/to/pilot/repository"
+
+The verifier checks:
+
+-   JSON syntax.
+-   Hook event inventory.
+-   Exactly one RTK Copilot hook.
+-   Presence of requested telemetry command patterns.
+-   Absence of .github/hooks.
+-   RTK binary existence.
+-   End-to-end git status rewrite.
+
+Manual VS Code checks
+
+1.  Restart VS Code.
+2.  Run Developer: Show Agent Debug Logs.
+3.  Start a new Agent session.
+4.  Ask Copilot to run git status.
+5.  Confirm the telemetry hook executed.
+6.  Confirm the RTK hook executed.
+7.  Confirm the tool input changed to rtk git status or the current RTK equivalent.
+8.  Run rtk gain --history.
+9.  Confirm a new command record exists.
+10. Open the Copilot Hooks output channel and confirm no parse or timeout errors.
+
+Failure behavior
+
+Telemetry fails
+
+Choose policy explicitly:
+
+-   Fail open: developer work continues; alert separately.
+-   Fail closed: tool call is blocked; use only when required by policy.
+
+The direct merge utility does not change the telemetry hook’s behavior.
+
+RTK fails
+
+RTK should fail open. The original command must run unchanged.
+
+Duplicate RTK entries
+
+Run the verifier. Remove duplicates with:
+
+    python3 global-hooks/remove_rtk_from_existing_hooks.py \
+      --target "$HOME/.copilot/hooks/company-telemetry.json"
+
+Then run the merge once.
+
+Repository hooks detected
+
+Remove them, move their required logic into the global chain, or explicitly document an approved exception. Do not proceed while an unreviewed repository hook can shadow the global chain.
+
+Rollback
+
+Every merge creates:
+
+    <target>.backup-YYYYMMDD-HHMMSS
+
+Restore it, restart VS Code, and verify telemetry.
+
+The remove utility deletes only commands containing rtk hook copilot; it leaves telemetry and other hooks untouched.

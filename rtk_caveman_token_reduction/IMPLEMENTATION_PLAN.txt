@@ -1,0 +1,359 @@
+Detailed Implementation Plan
+
+1. Goal
+
+Deploy a governed Copilot token-efficiency baseline across 14 repositories and more than 15 engineers in one day, while preserving existing global telemetry hooks.
+
+The solution covers:
+
+-   Windows physical laptops.
+-   macOS physical laptops.
+-   Linux VDI.
+-   Windows VDI.
+-   Remote extension-host scenarios.
+-   Software development, debugging, fixes, testing, and review.
+
+2. Control model
+
+  Layer                  Control                          Location                       Enforcement
+  ---------------------- -------------------------------- ------------------------------ ------------------------------
+  Telemetry and audit    Existing company hook solution   User/global hooks              Deterministic
+  Terminal compression   rtk hook copilot                 User/global PreToolUse         Deterministic when hooks run
+  Compact prose          Caveman Lite rules               Repository instructions        Behavioral
+  Minimum safe code      Ponytail-style rules             Instructions, agents, skills   Behavioral plus CI/review
+  Quality and security   Existing CI and controls         Repository pipelines           Deterministic
+
+3. Hook architecture
+
+3.1 Canonical global chain
+
+    Copilot tool request
+            |
+            v
+    Existing telemetry PreToolUse
+      - records metadata
+      - does not modify command
+            |
+            v
+    Existing policy/security PreToolUse, if present
+            |
+            v
+    RTK PreToolUse
+      - runs `rtk hook copilot`
+      - rewrites eligible command
+            |
+            v
+    Tool execution
+            |
+            v
+    Existing PostToolUse telemetry
+
+RTK should normally be the final hook that modifies tool_input.command.
+
+3.2 Preventing repository hooks from replacing global tracking
+
+Use an organization-managed or user-level setting based on:
+
+    {
+      "chat.hookFilesLocations": {
+        ".github/hooks": false,
+        ".claude/settings.local.json": false,
+        ".claude/settings.json": false,
+        "~/.copilot/hooks": true
+      },
+      "chat.useCustomAgentHooks": false
+    }
+
+This kit also validates that no .github/hooks directory exists in the 14 repositories.
+
+4. Pre-rollout preparation
+
+Complete before rollout day:
+
+1.  Confirm the approved RTK binary path for each platform.
+2.  Export and archive every existing user/global hook JSON file.
+3.  Identify the canonical telemetry hook file.
+4.  Confirm whether the telemetry PreToolUse hook is observational.
+5.  Confirm it exits zero during normal and error conditions.
+6.  Verify it does not emit an updatedInput value.
+7.  Confirm VS Code recognizes ~/.copilot/hooks.
+8.  Apply the managed hook-location settings.
+9.  Prepare the central kit repository.
+10. Complete a four-platform smoke test.
+11. Obtain repository-owner availability for the 14 pull requests.
+
+5. Global hook implementation
+
+Recommended direct mode
+
+Use direct mode when telemetry does not modify the tool input.
+
+1.  Run merge_rtk_into_existing_hooks.py.
+2.  The script creates a timestamped backup.
+3.  It preserves every existing hook event and command.
+4.  It appends RTK to PreToolUse.
+5.  It detects and avoids duplicate RTK entries.
+6.  It places RTK after existing direct PreToolUse entries.
+7.  Run verify_global_hooks.py.
+8.  Restart VS Code.
+9.  Inspect Agent Debug Logs.
+
+Optional dispatcher mode
+
+Use combined_pretool_dispatcher.py when more than one hook modifies the input or returns permission decisions that must be merged deterministically.
+
+The dispatcher:
+
+-   Executes configured steps sequentially.
+-   Passes each updated input to the next step.
+-   Preserves the most restrictive permission decision.
+-   Concatenates additional context.
+-   Emits exactly one JSON response to stdout.
+-   Sends diagnostics only to stderr.
+-   Supports fail-open or fail-closed behavior per step.
+
+Direct mode is simpler and preferred for observational telemetry.
+
+6. Repository implementation
+
+Deploy only:
+
+-   .github/copilot-instructions.md
+-   .github/agents/*.agent.md
+-   .github/skills/*/SKILL.md
+-   .github/prompts/*.prompt.md
+-   .github/instructions/*.instructions.md
+-   .github/scripts/validate-copilot-token-efficiency.py
+-   .github/TOKEN-EFFICIENCY-VERSION
+
+Do not deploy:
+
+-   .github/hooks
+-   RTK binaries
+-   external installers
+-   telemetry collectors
+-   private endpoint credentials
+
+Instruction strategy
+
+The always-on file must remain compact. It contains:
+
+-   RTK terminal preference and diagnostic override.
+-   Caveman Lite response rules.
+-   Minimum-change code-generation rules.
+-   Quality and security exceptions.
+-   Completion reporting requirements.
+
+Detailed workflows are stored as on-demand skills.
+
+Agent strategy
+
+-   Company Efficient Developer: implementation and fixes.
+-   Company Efficient Debugger: reproduce, isolate, root cause, narrow fix.
+-   Company Efficient Reviewer: read-only behavioral review for over-engineering and risk.
+
+Skill strategy
+
+-   company-compact-response
+-   company-minimal-change
+-   company-root-cause-debugging
+-   company-rtk-terminal
+
+7. One-day rollout schedule
+
+07:00–08:00 — Release freeze
+
+-   Tag the kit 1.0.0.
+-   Freeze RTK paths and global hook configuration.
+-   Confirm backups and rollback commands.
+-   Freeze the 14-repository list.
+-   Confirm owners and regional champions.
+
+08:00–09:00 — Global hook smoke test
+
+Validate one of each:
+
+-   Windows laptop.
+-   macOS laptop.
+-   Windows VDI.
+-   Linux VDI.
+
+Required tests:
+
+1.  Existing telemetry records SessionStart.
+2.  Existing telemetry records a terminal tool call.
+3.  git status is rewritten by RTK.
+4.  A passing test is compressed.
+5.  A failing test retains enough diagnostic detail.
+6.  RTK failure passes the original command through.
+7.  No .github/hooks file is loaded.
+8.  Agent debug logs show both telemetry and RTK.
+
+09:00–10:00 — Two-repository pilot
+
+Use one service repository and one data/platform repository.
+
+Run:
+
+-   One implementation.
+-   One failing-test investigation.
+-   One narrow bug fix.
+-   One code review.
+
+Verify:
+
+-   Existing instructions remain.
+-   Customizations load without errors.
+-   No repository hooks are introduced.
+-   No security or validation control is removed.
+-   Focused tests run before broad suites.
+
+10:00–11:30 — Generate 14 branches or pull requests
+
+1.  Fill rollout/repositories.csv.
+2.  Run the deployment script in dry-run mode.
+3.  Review the generated file list.
+4.  Run without dry-run.
+5.  Validate each repository.
+6.  Push branches.
+7.  Create pull requests.
+8.  Record the result in the rollout log.
+
+11:30–13:00 — Repository-owner review
+
+Every owner verifies:
+
+-   Marker block merged correctly.
+-   No existing instruction was removed.
+-   Agent names do not conflict.
+-   Skill names match directory names.
+-   Security and testing rules match the repository.
+-   No .github/hooks directory exists.
+
+13:00–14:00 — Endpoint and VDI configuration
+
+Run the relevant developer-install script.
+
+Physical machines are configured per user.
+
+VDI uses an idempotent login script or profile-image process.
+
+14:00–15:00 — Merge
+
+Merge only when:
+
+-   Repository validation passes.
+-   Global hook verification passes for relevant developers.
+-   Rollback commit is known.
+-   Required owners approve.
+
+15:00–16:00 — Developer activation
+
+Developers:
+
+1.  Pull the default branch.
+2.  Restart VS Code.
+3.  Open Chat Customizations.
+4.  Confirm instructions, agents, prompts, and skills.
+5.  Run the provided smoke-test prompt.
+6.  Submit a pass/fail result.
+
+16:00–17:00 — Final validation
+
+Targets:
+
+-   14 of 14 repositories updated.
+-   Four of four machine types verified.
+-   No workspace hook loaded.
+-   Existing telemetry still records events.
+-   RTK gains increase after test commands.
+-   No critical development regression.
+-   Rollback tested on one pilot machine and one pilot repository.
+
+8. Developer workflow
+
+Implementation
+
+Use Company Efficient Developer and request:
+
+    Implement the requirement using existing repository patterns.
+    Change the fewest files, add no dependency unless necessary,
+    and run the smallest relevant test first.
+
+Debugging
+
+Use Company Efficient Debugger and request:
+
+    Reproduce the failure before editing.
+    Find the first incorrect state and fix the narrowest shared root cause.
+
+Review
+
+Use Company Efficient Reviewer and request:
+
+    Review this diff for unnecessary code, files, dependencies,
+    abstractions, unrelated refactoring, missing tests, and weakened controls.
+
+Diagnostic override
+
+Use normal-detail mode when:
+
+-   Security or compliance is involved.
+-   The failure is uncertain.
+-   Data loss is possible.
+-   RTK compression hides a needed detail.
+-   A destructive action is proposed.
+
+9. Governance
+
+Protect:
+
+-   Global telemetry and RTK hook files.
+-   Hook merge utilities.
+-   Repository instructions, agents, and skills.
+-   Endpoint configuration scripts.
+-   Metrics definitions.
+
+Require:
+
+-   Backup before hook changes.
+-   Two-person review for hook changes.
+-   Code-owner review for repository customization.
+-   Fixed RTK version and path.
+-   No external downloads at developer runtime.
+-   No prompt or source capture in telemetry by default.
+-   Quarterly validation against current VS Code and RTK behavior.
+
+10. Rollback
+
+Global hook rollback
+
+Use the timestamped backup created by the merge utility or run:
+
+    python3 global-hooks/remove_rtk_from_existing_hooks.py \
+      --target ~/.copilot/hooks/company-telemetry.json
+
+Restart VS Code and verify telemetry remains.
+
+Repository rollback
+
+Run rollout/remove_from_repositories.py or revert the rollout commit.
+
+Partial rollback
+
+-   RTK issue: remove only the RTK hook entry.
+-   Caveman clarity issue: remove compact-response rules.
+-   Ponytail under-engineering: strengthen completeness rules or disable the minimum-change agent.
+-   One repository issue: revert only that repository.
+-   One platform issue: stop its login/configuration script.
+
+11. Completion criteria
+
+The rollout is complete when:
+
+-   Global telemetry and RTK both execute.
+-   No repository hook can shadow the global chain.
+-   14 repositories contain version 1.0.0.
+-   All expected agents and skills load.
+-   Metrics collection works without content capture.
+-   Quality gates show no degradation.
