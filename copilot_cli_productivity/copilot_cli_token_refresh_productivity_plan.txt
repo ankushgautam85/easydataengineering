@@ -1,0 +1,1705 @@
+COPILOT CLI TOKEN REFRESH AND SOFTWARE ENGINEERING PRODUCTIVITY IMPLEMENTATION PLAN
+==================================================================================
+
+PURPOSE
+-------
+
+Enable software engineers to use company-hosted open-source LLMs that are available only through Copilot CLI, while preserving the team's existing Visual Studio Code workflow and reusing the current Git repository configuration under:
+
+.github/
+  copilot-instructions.md
+  instructions/
+  agents/
+  skills/
+
+The design intentionally minimizes setup and developer behavior changes.
+
+Primary goals:
+
+1. Keep Visual Studio Code as the main engineering environment.
+2. Use Copilot Chat for small, convenient interactions.
+3. Use Copilot CLI for high-token, agentic, repository-level software development.
+4. Reuse all existing .github instructions, skills, and agents.
+5. Hide manual credential/environment-variable setup.
+6. Reduce hourly Azure SSO token refresh to one command plus the mandatory SSO interaction.
+7. Preserve Copilot CLI task context across token refreshes.
+8. Use company-hosted open-source models as the default engine for token-heavy work.
+9. Avoid introducing a new RAG system, context store, VS Code extension, or duplicated AI configuration.
+10. Keep short-lived credentials process-scoped rather than persist them on disk.
+
+
+TARGET DEVELOPER EXPERIENCE
+---------------------------
+
+Developers should need to remember only three commands:
+
+    ai
+
+Start a new Copilot CLI development session.
+
+
+    aic
+
+Refresh authentication if required and continue the previous Copilot CLI session.
+
+
+    air
+
+Force authentication refresh and continue the previous Copilot CLI session.
+
+
+Normal workflow:
+
+Visual Studio Code
+    |
+    +-- Editor
+    +-- Debugger
+    +-- Tests
+    +-- Git / Diff
+    +-- Copilot Chat
+    |      |
+    |      +-- Quick questions
+    |      +-- Small edits
+    |      +-- Explain selected code
+    |
+    +-- Integrated PowerShell Terminal
+           |
+           +-- ai / aic / air
+           |
+           +-- Copilot CLI
+                   |
+                   +-- Company-hosted OSS LLM on Bedrock
+                   |
+                   +-- Same local Git working tree
+                   |
+                   +-- Existing .github context
+
+
+REPOSITORY STRUCTURE
+--------------------
+
+No repository restructuring is required.
+
+Continue using:
+
+repo/
+|
++-- .github/
+|    |
+|    +-- copilot-instructions.md
+|    |
+|    +-- instructions/
+|    |
+|    +-- agents/
+|    |
+|    +-- skills/
+|
++-- src/
+|
++-- tests/
+|
++-- other project files
+
+
+Do not create a separate .ai directory just for Copilot CLI.
+
+Do not duplicate instructions.
+
+Do not create CLI-specific copies of existing agents or skills.
+
+The Git repository remains the shared context layer between Visual Studio Code Copilot Chat and Copilot CLI.
+
+
+OPERATING MODEL
+---------------
+
+Use Copilot Chat for convenience.
+
+Examples:
+
+    Explain this method.
+
+    Why is this exception occurring?
+
+    Refactor this selected function.
+
+    Write a small unit test.
+
+    Explain this SQL query.
+
+
+Use Copilot CLI plus the company-hosted OSS model for high-token engineering work.
+
+Examples:
+
+    Understand this module and its dependencies.
+
+    Implement this Jira story.
+
+    Analyze all callers of this interface.
+
+    Perform a multi-file refactoring.
+
+    Upgrade this dependency and fix compatibility problems.
+
+    Generate comprehensive unit and integration tests.
+
+    Run tests, diagnose failures, fix them, and rerun tests.
+
+    Perform a large code review.
+
+    Migrate multiple similar components.
+
+    Investigate a complex test failure.
+
+    Analyze a large Spark or data-engineering pipeline.
+
+
+The desired model-routing philosophy is:
+
+    Small / convenient work
+            |
+            +--> Copilot Chat
+
+    Larger / token-heavy work
+            |
+            +--> Copilot CLI
+                    |
+                    +--> Company-hosted OSS model
+
+    OSS model cannot solve task effectively
+            |
+            +--> Escalate to stronger premium model when appropriate
+
+
+TOKEN REFRESH PROBLEM
+---------------------
+
+Current process:
+
+1. Run a token-refresh script.
+2. Script generates a device code.
+3. Developer opens Azure SSO portal.
+4. Developer enters the device code.
+5. Authentication completes.
+6. Key/token is returned to the terminal.
+7. Developer manually adds the value as an environment variable in PowerShell.
+8. Copilot CLI is launched.
+9. Approximately one hour later the process repeats.
+
+This is too much friction for broad CLI adoption.
+
+The optimized workflow should be:
+
+    ai / aic
+       |
+       +-- Check credential state
+       |
+       +-- Credential valid?
+               |
+          +----+----+
+          |         |
+         YES       NO
+          |         |
+          |         +-- Run existing company auth script
+          |                  |
+          |                  +-- Device code generated
+          |                  +-- Azure SSO
+          |                  +-- New credential returned
+          |                  +-- Set process environment variable
+          |
+          +---------+
+                    |
+                    +-- Set OSS model environment variable
+                    |
+                    +-- Launch Copilot CLI
+                            |
+                            +-- New session for ai
+                            |
+                            +-- Continue previous session for aic
+
+
+SECURITY PRINCIPLES
+-------------------
+
+Do not persist the one-hour token using:
+
+    setx
+
+or:
+
+    [Environment]::SetEnvironmentVariable(..., "User")
+
+or:
+
+    [Environment]::SetEnvironmentVariable(..., "Machine")
+
+The credential should remain process-scoped.
+
+Use:
+
+    $env:COMPANY_COPILOT_TOKEN = $token
+
+or:
+
+    [Environment]::SetEnvironmentVariable(
+        "COMPANY_COPILOT_TOKEN",
+        $token,
+        [EnvironmentVariableTarget]::Process
+    )
+
+The resulting process hierarchy should be:
+
+    PowerShell
+        |
+        +-- Temporary credential
+        |
+        +-- Copilot CLI
+                |
+                +-- Inherits temporary credential
+
+Only non-secret metadata should be persisted locally.
+
+For example:
+
+    issuedAt
+    expiresAt
+    model
+
+Never persist:
+
+    access token
+    secret
+    generated API key
+    refresh credential
+
+
+CHANGE TO EXISTING AUTHENTICATION SCRIPT
+----------------------------------------
+
+The existing company refresh script should continue handling Azure SSO exactly as it does today.
+
+The only recommended change is that after successful authentication it should place the generated credential into an environment variable in the current PowerShell process.
+
+Example:
+
+    $env:COMPANY_COPILOT_REFRESHED_KEY = $generatedKey
+
+If the authentication script knows the actual expiration time, also expose:
+
+    $env:COMPANY_COPILOT_KEY_EXPIRES_AT = $expirationTime.ToString("o")
+
+If the script does not know the expiration time, the launcher can assume the current one-hour lifetime.
+
+If possible, also improve the SSO UX by:
+
+1. Copying the generated device code to the clipboard.
+2. Opening the approved Azure device-login page automatically.
+3. Displaying a clear message in the terminal.
+4. Waiting for the existing authentication process to complete.
+
+Example concept:
+
+    Set-Clipboard $deviceCode
+    Start-Process $AzureDeviceLoginUrl
+
+This must not bypass SSO, MFA, company authentication policies, or the existing token-generation mechanism.
+
+
+REFERENCE POWERSHELL LAUNCHER
+-----------------------------
+
+Save as:
+
+    C:\company\copilot\ai.ps1
+
+Replace configuration placeholders with the actual company values.
+
+
+    param(
+        [switch]$Continue,
+        [switch]$ForceRefresh
+    )
+
+    Set-StrictMode -Version Latest
+    $ErrorActionPreference = "Stop"
+
+    # ============================================================
+    # CONFIGURATION
+    # ============================================================
+
+    # Existing company token-refresh script.
+    $CompanyRefreshScript = "C:\company\copilot\refresh-token.ps1"
+
+    # Environment variable populated by the refresh script.
+    $RefreshOutputEnvVar = "COMPANY_COPILOT_REFRESHED_KEY"
+
+    # Environment variable expected by the Copilot/Bedrock integration.
+    $CopilotCredentialEnvVar = "YOUR_COPILOT_CREDENTIAL_ENV_VAR"
+
+    # Environment variable used to choose the company OSS model.
+    $CopilotModelEnvVar = "YOUR_COPILOT_MODEL_ENV_VAR"
+
+    # Company-approved OSS model.
+    $CopilotModel = "YOUR_COMPANY_OSS_MODEL"
+
+    # Current credentials last approximately 60 minutes.
+    $CredentialLifetimeMinutes = 60
+
+    # Refresh before the credential actually expires.
+    $RefreshBufferMinutes = 8
+
+    # Metadata only. NO TOKEN is written here.
+    $StateDirectory = Join-Path $HOME ".company-copilot"
+    $StateFile = Join-Path $StateDirectory "auth-state.json"
+
+
+    # ============================================================
+    # HELPER FUNCTIONS
+    # ============================================================
+
+    function Get-ProcessEnvironmentVariable {
+        param(
+            [Parameter(Mandatory)]
+            [string]$Name
+        )
+
+        return [Environment]::GetEnvironmentVariable(
+            $Name,
+            [EnvironmentVariableTarget]::Process
+        )
+    }
+
+
+    function Set-ProcessEnvironmentVariable {
+        param(
+            [Parameter(Mandatory)]
+            [string]$Name,
+
+            [Parameter(Mandatory)]
+            [string]$Value
+        )
+
+        [Environment]::SetEnvironmentVariable(
+            $Name,
+            $Value,
+            [EnvironmentVariableTarget]::Process
+        )
+    }
+
+
+    function Get-AuthState {
+
+        if (-not (Test-Path $StateFile)) {
+            return $null
+        }
+
+        try {
+            return Get-Content $StateFile -Raw | ConvertFrom-Json
+        }
+        catch {
+            return $null
+        }
+    }
+
+
+    function Save-AuthState {
+
+        param(
+            [Parameter(Mandatory)]
+            [DateTime]$IssuedAt,
+
+            [Parameter(Mandatory)]
+            [DateTime]$ExpiresAt
+        )
+
+        if (-not (Test-Path $StateDirectory)) {
+            New-Item `
+                -ItemType Directory `
+                -Path $StateDirectory `
+                -Force | Out-Null
+        }
+
+        $state = @{
+            issuedAt  = $IssuedAt.ToString("o")
+            expiresAt = $ExpiresAt.ToString("o")
+            model     = $CopilotModel
+        }
+
+        $state |
+            ConvertTo-Json |
+            Set-Content `
+                -Path $StateFile `
+                -Encoding UTF8
+    }
+
+
+    function Test-CredentialRefreshRequired {
+
+        if ($ForceRefresh) {
+            return $true
+        }
+
+        $credential =
+            Get-ProcessEnvironmentVariable `
+                -Name $CopilotCredentialEnvVar
+
+        if ([string]::IsNullOrWhiteSpace($credential)) {
+            return $true
+        }
+
+        $state = Get-AuthState
+
+        if ($null -eq $state) {
+            return $true
+        }
+
+        try {
+            $expiresAt =
+                [DateTime]::Parse($state.expiresAt)
+
+            $refreshAt =
+                $expiresAt.AddMinutes(
+                    -$RefreshBufferMinutes
+                )
+
+            if ((Get-Date) -ge $refreshAt) {
+                return $true
+            }
+        }
+        catch {
+            return $true
+        }
+
+        return $false
+    }
+
+
+    function Invoke-CompanyCredentialRefresh {
+
+        Write-Host ""
+        Write-Host "========================================"
+        Write-Host " Copilot OSS Authentication"
+        Write-Host "========================================"
+        Write-Host ""
+
+        if (-not (Test-Path $CompanyRefreshScript)) {
+
+            throw @"
+    Company credential refresh script was not found:
+
+    $CompanyRefreshScript
+    "@
+        }
+
+        #
+        # Dot-source the existing PowerShell script.
+        #
+        # This allows environment variables populated by the
+        # refresh script to remain visible to this process.
+        #
+        . $CompanyRefreshScript
+
+        $credential =
+            Get-ProcessEnvironmentVariable `
+                -Name $RefreshOutputEnvVar
+
+        if ([string]::IsNullOrWhiteSpace($credential)) {
+
+            throw @"
+    Authentication completed but the refresh script
+    did not populate:
+
+    $RefreshOutputEnvVar
+
+    Update the refresh script so that after Azure SSO
+    success it sets:
+
+    `$env:$RefreshOutputEnvVar = <generated credential>
+    "@
+        }
+
+        #
+        # Map the generated credential into the environment
+        # variable expected by Copilot / Bedrock integration.
+        #
+        Set-ProcessEnvironmentVariable `
+            -Name $CopilotCredentialEnvVar `
+            -Value $credential
+
+
+        #
+        # Do not keep unnecessary duplicate copies.
+        #
+        if ($RefreshOutputEnvVar -ne $CopilotCredentialEnvVar) {
+
+            [Environment]::SetEnvironmentVariable(
+                $RefreshOutputEnvVar,
+                $null,
+                [EnvironmentVariableTarget]::Process
+            )
+        }
+
+
+        $issuedAt = Get-Date
+
+        #
+        # Prefer actual expiration from the auth system
+        # if the existing refresh script can expose it.
+        #
+        $expirationValue =
+            Get-ProcessEnvironmentVariable `
+                -Name "COMPANY_COPILOT_KEY_EXPIRES_AT"
+
+        if (-not [string]::IsNullOrWhiteSpace($expirationValue)) {
+
+            try {
+                $expiresAt =
+                    [DateTime]::Parse($expirationValue)
+            }
+            catch {
+                $expiresAt =
+                    $issuedAt.AddMinutes(
+                        $CredentialLifetimeMinutes
+                    )
+            }
+        }
+        else {
+
+            $expiresAt =
+                $issuedAt.AddMinutes(
+                    $CredentialLifetimeMinutes
+                )
+        }
+
+
+        Save-AuthState `
+            -IssuedAt $issuedAt `
+            -ExpiresAt $expiresAt
+
+
+        Write-Host ""
+        Write-Host "Authentication successful."
+        Write-Host "Credential expires approximately:"
+        Write-Host "  $expiresAt"
+        Write-Host ""
+    }
+
+
+    function Set-CopilotModel {
+
+        Set-ProcessEnvironmentVariable `
+            -Name $CopilotModelEnvVar `
+            -Value $CopilotModel
+    }
+
+
+    function Show-CopilotStatus {
+
+        $state = Get-AuthState
+
+        Write-Host ""
+        Write-Host "========================================"
+        Write-Host " Copilot OSS Development"
+        Write-Host "========================================"
+
+        Write-Host "Repository : $((Get-Location).Path)"
+        Write-Host "Model      : $CopilotModel"
+
+        if ($Continue) {
+            Write-Host "Session    : Continue previous"
+        }
+        else {
+            Write-Host "Session    : New/current"
+        }
+
+        if ($null -ne $state) {
+            Write-Host "Expires    : $($state.expiresAt)"
+        }
+
+        Write-Host "========================================"
+        Write-Host ""
+    }
+
+
+    # ============================================================
+    # MAIN
+    # ============================================================
+
+    $refreshRequired =
+        Test-CredentialRefreshRequired
+
+
+    if ($refreshRequired) {
+
+        Invoke-CompanyCredentialRefresh
+    }
+    else {
+
+        Write-Host ""
+        Write-Host "Existing Copilot credential is still valid."
+    }
+
+
+    Set-CopilotModel
+
+    Show-CopilotStatus
+
+
+    if (-not (Get-Command copilot -ErrorAction SilentlyContinue)) {
+
+        throw @"
+    Copilot CLI was not found in PATH.
+    "@
+    }
+
+
+    if ($Continue) {
+
+        & copilot --continue
+    }
+    else {
+
+        & copilot
+    }
+
+
+    $exitCode = $LASTEXITCODE
+
+    exit $exitCode
+
+
+POWERSHELL PROFILE COMMANDS
+---------------------------
+
+Add the following to the standard developer PowerShell profile:
+
+    function ai {
+        & "C:\company\copilot\ai.ps1"
+    }
+
+    function aic {
+        & "C:\company\copilot\ai.ps1" -Continue
+    }
+
+    function air {
+        & "C:\company\copilot\ai.ps1" `
+            -Continue `
+            -ForceRefresh
+    }
+
+
+Result:
+
+    ai
+
+starts normal AI development.
+
+
+    aic
+
+continues the previous Copilot CLI session and automatically refreshes authentication when needed.
+
+
+    air
+
+forces a token refresh and continues the previous session.
+
+
+TOKEN LIFETIME HANDLING
+-----------------------
+
+Do not wait for the exact 60-minute expiration boundary.
+
+Recommended values:
+
+    Token lifetime:     60 minutes
+    Refresh buffer:      8 minutes
+    Effective refresh:  ~52 minutes
+
+Reason:
+
+Starting a new agentic task with only a few minutes of credential life remaining creates avoidable mid-task failures.
+
+Example:
+
+    Token issued:  09:00
+    Actual expiry: 10:00
+    Refresh-after: 09:52
+
+If a developer runs:
+
+    ai
+
+at 09:55, authenticate first.
+
+If a developer runs:
+
+    ai
+
+at 09:20 and the current PowerShell process still holds the valid credential, launch Copilot directly.
+
+
+IMPORTANT ENVIRONMENT-VARIABLE BEHAVIOR
+---------------------------------------
+
+A running Copilot CLI process inherits environment variables when it starts.
+
+Updating an environment variable in another PowerShell process generally does not update the environment of an already-running Copilot process.
+
+Therefore the recommended hourly lifecycle is:
+
+    Copilot CLI session
+          |
+          +-- credential eventually expires
+          |
+          +-- exit CLI if required
+          |
+          +-- run aic
+                  |
+                  +-- authenticate
+                  +-- new process-scoped environment
+                  +-- copilot --continue
+                  +-- previous task context restored
+
+Do not design around injecting new credentials into an already-running process unless Copilot CLI or the company's integration explicitly supports that behavior.
+
+
+TASK LIFECYCLE VS CREDENTIAL LIFECYCLE
+--------------------------------------
+
+These must remain independent.
+
+Example three-hour engineering task:
+
+    Engineering task
+    -------------------------------------------------->
+
+    Credential 1
+    ----------------
+
+                   Credential 2
+                   ----------------
+
+                                  Credential 3
+                                  ----------------
+
+
+The developer experience should be:
+
+    Task ABC
+       |
+       +-- Credential 1
+       |
+       +-- Refresh
+       |
+       +-- Credential 2
+       |
+       +-- Refresh
+       |
+       +-- Credential 3
+
+
+The developer should never have to reconstruct the task because the credential expired.
+
+
+CLI SESSION CONTINUITY
+----------------------
+
+Use Copilot CLI native session continuation for multi-hour work.
+
+Primary pattern:
+
+    copilot --continue
+
+Developer command:
+
+    aic
+
+implements:
+
+    authenticate if needed
+        |
+        +-- set environment
+        |
+        +-- launch copilot --continue
+
+
+Recommended mental model:
+
+    Same engineering problem
+        |
+        +-- continue current CLI conversation
+
+    Credential expired
+        |
+        +-- aic
+
+    Completely unrelated engineering problem
+        |
+        +-- start a new Copilot session
+
+
+CLI PRODUCTIVITY WORKFLOW
+-------------------------
+
+Use three lanes.
+
+
+LANE 1 - FAST INTERACTION
+-------------------------
+
+Use for:
+
+    Explain this failure.
+
+    Find where this configuration is loaded.
+
+    Write tests for this class.
+
+    Refactor this function.
+
+    Fix this exception.
+
+    Find all callers.
+
+Workflow:
+
+    VS Code
+       |
+       +-- Existing Copilot CLI terminal
+               |
+               +-- Ask directly
+               |
+               +-- Continue editing
+
+Do not add planning ceremony for small work.
+
+
+LANE 2 - FEATURE DEVELOPMENT
+----------------------------
+
+Use for:
+
+    Implement a Jira story.
+
+    Add an API.
+
+    Change a workflow.
+
+    Add support for a feature.
+
+    Modify several related classes.
+
+Recommended interaction:
+
+    Inspect the existing implementation and associated tests.
+    Do not modify anything yet.
+    Propose the minimum-change implementation.
+
+Then:
+
+    Implement the approved approach.
+
+Then:
+
+    Run the relevant tests.
+    Diagnose and fix failures caused by this change.
+
+Then:
+
+    Add missing edge-case tests if appropriate.
+
+Then:
+
+    Review the final change for regressions and unnecessary modifications.
+
+Developer reviews source changes through normal VS Code Git/diff tooling.
+
+
+LANE 3 - HIGH-TOKEN AGENTIC WORK
+--------------------------------
+
+This is the primary area for using the additional company OSS-model capacity.
+
+Use for:
+
+    Large migrations.
+
+    Dependency upgrades.
+
+    Test generation.
+
+    Repository-wide analysis.
+
+    Repetitive refactoring.
+
+    Large integration-test debugging.
+
+    Code cleanup.
+
+    Documentation generation.
+
+    Large code review.
+
+    Data/Spark pipeline investigation.
+
+Recommended prompt style:
+
+    Analyze the affected implementation thoroughly.
+
+    Identify all callers and dependencies.
+
+    Read the associated tests.
+
+    Implement the requested change following existing
+    repository patterns.
+
+    Run relevant tests.
+
+    Diagnose failures caused by your modifications.
+
+    Fix those failures.
+
+    Add missing edge-case tests.
+
+    Run lint/build validation.
+
+    Review the final diff for regressions and unnecessary
+    changes.
+
+    Report what changed and any remaining risks.
+
+
+The purpose is not to minimize model tokens.
+
+The purpose is to convert available OSS-model token capacity into developer productivity.
+
+
+EXISTING INSTRUCTIONS
+---------------------
+
+Continue using:
+
+    .github/copilot-instructions.md
+
+and:
+
+    .github/instructions/
+
+Do not ask developers to repeatedly include engineering standards in prompts.
+
+Good repository instructions should include stable information such as:
+
+    Build command
+    Unit-test command
+    Integration-test command
+    Lint command
+    Format command
+    Important source locations
+    Test locations
+    Architectural pattern
+    Framework conventions
+    Dependency rules
+    Commands that must not be executed automatically
+
+
+Example:
+
+    Build:
+    ./gradlew build
+
+    Unit tests:
+    ./gradlew test
+
+    Integration tests:
+    ./gradlew integrationTest
+
+    Formatting:
+    ./gradlew spotlessApply
+
+    Application source:
+    src/main
+
+    Tests:
+    src/test
+
+    Prefer existing repository patterns.
+
+    Do not introduce new dependencies unless explicitly justified.
+
+
+This reduces the time the model spends rediscovering basic repository mechanics.
+
+
+EXISTING SKILLS
+---------------
+
+Continue using:
+
+    .github/skills/
+
+Use skills to encode repeated engineering workflows instead of asking developers to retype them.
+
+Common high-value skills include:
+
+    implement-feature
+    unit-test
+    debug-test-failure
+    validate-change
+    dependency-upgrade
+    refactor
+    code-review
+    documentation
+
+Reuse existing skills before creating new ones.
+
+A skill should eliminate repeated prompting.
+
+Example:
+
+Without a skill:
+
+    Developer: run tests
+    Developer: fix failures
+    Developer: rerun tests
+    Developer: run lint
+    Developer: review diff
+
+Desired:
+
+    Developer:
+    Validate this implementation completely.
+
+        |
+        +-- Existing validation skill
+                |
+                +-- tests
+                +-- diagnosis
+                +-- fixes
+                +-- retest
+                +-- lint
+                +-- final review
+
+
+EXISTING AGENTS
+---------------
+
+Continue using:
+
+    .github/agents/
+
+Do not duplicate agents for CLI.
+
+Existing examples may include:
+
+    developer.agent.md
+    architect.agent.md
+    test-engineer.agent.md
+    reviewer.agent.md
+    security-reviewer.agent.md
+
+Agents should describe roles.
+
+Skills should describe repeatable procedures.
+
+Simple rule:
+
+    AGENT = WHO IS DOING THE WORK?
+
+    SKILL = HOW SHOULD THIS TYPE OF WORK BE PERFORMED?
+
+
+PERMISSION MODEL
+----------------
+
+One of the largest CLI adoption risks is excessive approval prompts.
+
+Do not blindly enable unrestricted execution.
+
+Instead, establish a company-approved safe command policy.
+
+Examples that may be appropriate to auto-allow depending on company policy:
+
+    Read files
+    Search files
+    Modify files inside the repository
+    git status
+    git diff
+    git log
+    pytest
+    npm test
+    mvn test
+    gradle test
+    local lint
+    local format
+    local compile/build
+
+Examples that should normally remain restricted or explicitly approved:
+
+    git push
+    git reset --hard
+    production deployment
+    terraform apply
+    destructive kubectl operations
+    destructive database operations
+    credential retrieval
+    secret access
+    commands outside the workspace
+
+The objective is:
+
+    Copilot
+       |
+       +-- read
+       +-- edit
+       +-- test
+       +-- fix
+       +-- test
+
+without repeated prompts for low-risk development actions.
+
+
+VISUAL STUDIO CODE ROLE
+-----------------------
+
+Do not attempt to make Copilot CLI replace Visual Studio Code.
+
+Visual Studio Code remains responsible for:
+
+    Editing
+    Navigation
+    Debugging
+    Breakpoints
+    Test visualization
+    Git
+    Diff review
+    Source control
+    Copilot Chat
+
+Copilot CLI becomes the high-capacity AI engineering worker.
+
+Target behavior:
+
+    CLI modifies files
+        |
+        +-- VS Code immediately sees modifications
+        |
+        +-- Developer reviews normal VS Code diff
+        |
+        +-- Developer continues discussion in CLI
+
+
+Do not build a custom VS Code extension initially.
+
+The integrated PowerShell terminal is sufficient for Phase 1.
+
+
+DEVELOPER DAILY WORKFLOW
+------------------------
+
+Start of day:
+
+    Open repository in Visual Studio Code.
+
+    Open the integrated PowerShell terminal.
+
+    Run:
+
+        ai
+
+If authentication is required:
+
+    Device code is generated.
+
+    Azure SSO page is opened or developer navigates to it.
+
+    Developer performs required SSO/MFA.
+
+    Credential is returned.
+
+    Environment variable is populated automatically.
+
+    Company OSS model is configured automatically.
+
+    Copilot CLI launches.
+
+
+Developer starts work:
+
+    Inspect the current implementation for ABC-123 and its tests.
+    Do not modify anything yet.
+
+
+Then:
+
+    Implement the minimum-change approach.
+
+
+Then:
+
+    Run relevant tests and fix failures caused by the change.
+
+
+Then review changes in Visual Studio Code.
+
+
+When credential expires:
+
+    Exit the CLI if necessary.
+
+    Run:
+
+        aic
+
+Perform required Azure SSO.
+
+Copilot CLI launches using:
+
+    copilot --continue
+
+Developer immediately resumes the previous task.
+
+
+If authentication behaves unexpectedly:
+
+    air
+
+forces a new credential and resumes the previous session.
+
+
+INITIAL IMPLEMENTATION PLAN
+---------------------------
+
+PHASE 1 - AUTHENTICATION WRAPPER
+
+1. Identify the existing approved token-refresh PowerShell script.
+
+2. Modify it minimally so successful authentication exposes:
+
+       $env:COMPANY_COPILOT_REFRESHED_KEY
+
+3. If available, expose:
+
+       $env:COMPANY_COPILOT_KEY_EXPIRES_AT
+
+4. Do not change Azure SSO behavior.
+
+5. Do not persist the token.
+
+
+PHASE 2 - AI LAUNCHER
+
+Deploy:
+
+    ai.ps1
+
+Responsibilities:
+
+    Determine whether authentication is needed.
+
+    Run the existing company refresh script.
+
+    Obtain the refreshed credential.
+
+    Put it in the environment variable expected by the
+    company Copilot/Bedrock integration.
+
+    Configure the approved OSS model.
+
+    Display basic status.
+
+    Start:
+
+        copilot
+
+    or:
+
+        copilot --continue
+
+
+PHASE 3 - DEVELOPER COMMANDS
+
+Add:
+
+    ai
+    aic
+    air
+
+to the standard PowerShell profile or equivalent company bootstrap/profile script.
+
+
+PHASE 4 - VALIDATE EXISTING REPOSITORY CONTEXT
+
+For representative repositories verify:
+
+    .github/copilot-instructions.md is recognized.
+
+    .github/instructions is recognized.
+
+    .github/skills is usable.
+
+    .github/agents is usable.
+
+Do not migrate or restructure unless an actual compatibility issue is identified.
+
+
+PHASE 5 - PILOT
+
+Pilot with approximately 3-5 engineers across representative project types.
+
+Test:
+
+    New session
+    Existing credential
+    Expired credential
+    Forced refresh
+    Session continuation
+    Multi-hour engineering task
+    File modification
+    Unit-test execution
+    Build
+    Skills
+    Agents
+    VS Code diff review
+
+
+PHASE 6 - OPTIMIZE ONLY AFTER PILOT
+
+Potential enhancements:
+
+    Automatically copy Azure device code to clipboard.
+
+    Automatically open Azure SSO page.
+
+    Improve exact expiration detection.
+
+    Add company-approved CLI permissions.
+
+    Improve repository build/test instructions.
+
+    Tune existing skills.
+
+    Tune existing agents.
+
+    Add VS Code task or keyboard shortcut.
+
+    Add privacy-safe operational telemetry.
+
+Do not build these before the basic workflow is proven.
+
+
+PILOT TEST CASES
+----------------
+
+TEST 1 - NEW SESSION
+
+Run:
+
+    ai
+
+Expected:
+
+    Authentication runs if credential is unavailable.
+
+    Environment is configured.
+
+    Correct OSS model is used.
+
+    Copilot starts.
+
+    Repository context is available.
+
+
+TEST 2 - VALID CREDENTIAL
+
+Within the same PowerShell process and before refresh threshold:
+
+    ai
+
+Expected:
+
+    Authentication is skipped.
+
+    Copilot starts immediately.
+
+
+TEST 3 - EXPIRED CREDENTIAL
+
+After credential expires:
+
+    aic
+
+Expected:
+
+    Authentication occurs.
+
+    New token is used.
+
+    Copilot runs with:
+
+        --continue
+
+    Previous engineering conversation is restored.
+
+
+TEST 4 - FORCE REFRESH
+
+Run:
+
+    air
+
+Expected:
+
+    Existing credential state is ignored.
+
+    Authentication occurs.
+
+    New credential is used.
+
+    Previous Copilot session continues.
+
+
+TEST 5 - MULTI-HOUR TASK
+
+Start a feature requiring more than one credential lifetime.
+
+Expected:
+
+    Developer does not restate the engineering problem
+    after credential refresh.
+
+    Source working tree remains unchanged by restart.
+
+    Previous Copilot context resumes.
+
+
+TEST 6 - EXISTING .GITHUB CONTEXT
+
+Ask the CLI to perform a normal implementation task.
+
+Expected:
+
+    Existing instructions influence implementation.
+
+    Relevant existing skills are available.
+
+    Relevant existing agents are available.
+
+    No duplicated CLI-specific context is needed.
+
+
+TEST 7 - DEVELOPMENT LOOP
+
+Prompt Copilot to:
+
+    Inspect implementation.
+
+    Modify code.
+
+    Run tests.
+
+    Diagnose failure.
+
+    Fix failure.
+
+    Rerun tests.
+
+Expected:
+
+    Developer interaction is lower than performing the
+    same sequence manually through Copilot Chat.
+
+
+TEAM GUIDANCE
+-------------
+
+Provide developers the following simple rule set.
+
+START NEW AI WORK
+
+    ai
+
+
+CONTINUE CURRENT AI WORK
+
+    aic
+
+
+AUTH FAILURE / FORCE REFRESH
+
+    air
+
+
+SMALL QUESTION
+
+    Copilot Chat or the currently-running CLI session
+
+
+LARGE / TOKEN-HEAVY TASK
+
+    Copilot CLI + company OSS model
+
+
+SOURCE REVIEW
+
+    Visual Studio Code diff
+
+
+PROJECT CONTEXT
+
+    Existing .github instructions, skills, and agents
+
+
+CREDENTIALS
+
+    Process-scoped only
+
+
+TOKEN EXPIRATION
+
+    Authenticate and resume with aic
+
+
+Do not ask developers to learn a large CLI command catalog during initial rollout.
+
+
+ADOPTION PRINCIPLES
+-------------------
+
+1. Do not make CLI adoption a process-adoption exercise.
+
+2. Engineers remain in Visual Studio Code.
+
+3. CLI is simply another pane inside the existing development environment.
+
+4. The company OSS model should handle token-heavy work.
+
+5. Do not require developers to manually select the model every time if the existing environment setup can provide the default.
+
+6. Do not ask developers to manually paste project instructions.
+
+7. Do not duplicate .github context.
+
+8. Keep authentication as close to one command plus required SSO as possible.
+
+9. Preserve engineering sessions across credential expiry.
+
+10. Let the model perform longer analyze-implement-test-fix-review loops where doing so saves developer time.
+
+11. Use available tokens productively rather than optimizing only for token reduction.
+
+12. Keep human review of generated code.
+
+
+SUCCESS METRICS
+---------------
+
+The rollout should target:
+
+    Normal CLI launch:
+        1 command
+
+    Credential refresh:
+        1 command + mandatory SSO
+
+    Manual copying of generated credential:
+        0
+
+    Manual environment-variable setup:
+        0
+
+    Repeated manual model setup:
+        0
+
+    Re-pasting project instructions:
+        0
+
+    Re-explaining work after hourly token refresh:
+        0
+
+    Existing .github restructuring:
+        0
+
+    Persisted hourly credentials:
+        0
+
+    Developer return to work after successful SSO:
+        Immediate or near-immediate
+
+    CLI usage for large/token-heavy engineering work:
+        Increasing
+
+    Premium-model escalation:
+        Used primarily when OSS models are insufficient
+
+
+RECOMMENDED ROLLOUT ORDER
+-------------------------
+
+1. Fix the credential handoff.
+
+2. Deploy ai / aic / air.
+
+3. Verify session continuation.
+
+4. Verify existing .github instructions, skills, and agents.
+
+5. Pilot with a small engineering group.
+
+6. Measure friction.
+
+7. Optimize permissions.
+
+8. Improve instructions where the model wastes time rediscovering repository mechanics.
+
+9. Improve existing skills for repetitive engineering workflows.
+
+10. Add convenience features such as VS Code task integration only after the core workflow is stable.
+
+
+FINAL TARGET STATE
+------------------
+
+The final experience should be:
+
+    Developer opens Visual Studio Code.
+
+    Developer works normally.
+
+    For a quick AI interaction:
+        use Copilot Chat.
+
+    For a large/token-intensive task:
+        open integrated terminal.
+
+        run:
+
+            ai
+
+    Authentication occurs only when necessary.
+
+    Company OSS model is configured.
+
+    Copilot CLI uses the same repository and existing .github
+    instructions, skills, and agents.
+
+    Copilot performs repository analysis, implementation,
+    tests, fixes, and review.
+
+    Developer reviews changes through Visual Studio Code.
+
+    When the one-hour credential expires:
+
+        run:
+
+            aic
+
+    Complete mandatory Azure SSO.
+
+    The previous Copilot session resumes.
+
+    Development continues without reconstructing task context.
+
+
+This design intentionally adds the smallest possible layer around the existing approved authentication and Copilot CLI workflow while preserving the team's existing Visual Studio Code and .github-based development practices.
