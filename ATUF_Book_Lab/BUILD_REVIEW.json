@@ -1,0 +1,10 @@
+{
+  "release": "1.0.2",
+  "automated_tests_passed": 23,
+  "python_compilation": "PASS",
+  "bash_syntax": "PASS",
+  "yaml_parse": "PASS",
+  "logstash_flags_review": "Checked against official Logstash 8.19 documentation",
+  "docker_integration": "NOT RUN: no Docker engine in build environment",
+  "mac_finder_launch": "NOT RUN: build host is Linux"
+}

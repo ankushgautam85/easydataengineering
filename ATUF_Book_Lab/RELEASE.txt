@@ -1,0 +1,2 @@
+ATUF Reader Lab 1.0.2
+Corrected Logstash CLI; unattended Kafka checks; Mac launchers.

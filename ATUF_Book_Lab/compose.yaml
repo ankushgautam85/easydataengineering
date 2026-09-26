@@ -1,0 +1,59 @@
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.0
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      node.store.allow_mmap: "false"
+      ES_JAVA_OPTS: -Xms1g -Xmx1g
+    ports: ["127.0.0.1:9200:9200"]
+    volumes: ["esdata:/usr/share/elasticsearch/data"]
+  kafka-init:
+    image: apache/kafka:3.9.0
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ["chown -R 1000:1000 /tmp/kraft-combined-logs"]
+    volumes: ["kafkadata:/tmp/kraft-combined-logs"]
+  kafka:
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    image: apache/kafka:3.9.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+    volumes: ["kafkadata:/tmp/kraft-combined-logs"]
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.19.0
+    environment:
+      LS_JAVA_OPTS: -Xms512m -Xmx512m
+    ports: ["127.0.0.1:8080:8080"]
+    volumes:
+      - ./orders.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+      - ./logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - lsdata:/usr/share/logstash/data
+  otel:
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    ports: ["127.0.0.1:4318:4318"]
+    volumes:
+      - ./collector.yaml:/etc/otelcol/config.yaml:ro
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.19.0
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports: ["127.0.0.1:5601:5601"]
+volumes:
+  esdata: {}
+  kafkadata: {}
+  lsdata: {}

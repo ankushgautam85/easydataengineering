@@ -1,0 +1,8 @@
+api.http.host: 0.0.0.0
+pipeline.ecs_compatibility: disabled
+pipeline.workers: 1
+queue.type: persisted
+queue.max_bytes: 1gb
+queue.checkpoint.writes: 1
+dead_letter_queue.enable: true
+xpack.monitoring.enabled: false

@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+test-results/
+*.ndjson
+keyed*.txt
+bad.json
+valid.json
+.DS_Store
+
+.lab-project
